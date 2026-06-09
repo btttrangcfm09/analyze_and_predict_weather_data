@@ -1,0 +1,8 @@
+pandas
+numpy
+scipy
+plotly
+streamlit
+xarray
+cfgrib
+cdsapi
