@@ -6,3 +6,4 @@ streamlit
 xarray
 cfgrib
 cdsapi
+pyarrow
