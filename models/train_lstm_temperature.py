@@ -33,9 +33,12 @@ warnings.filterwarnings('ignore')
 # ============================================================
 OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(OUTPUT_DIR)
-# Đường dẫn TƯƠNG ĐỐI theo vị trí repo (di động giữa các máy)
-DATA_PATH = os.path.join(REPO_ROOT, "archive", "weather.parquet")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Dữ liệu lịch sử lấy trực tiếp từ Kaggle (kagglehub tự cache, không lưu trong repo)
+import kagglehub
+KAGGLE_DATASET = "nguyentranggggg/vietnam-meteorological-weather-data-2020-2026"
+DATA_PATH = os.path.join(kagglehub.dataset_download(KAGGLE_DATASET), "weather.parquet")
 
 SEQUENCE_LENGTH = 30
 BATCH_SIZE = 64

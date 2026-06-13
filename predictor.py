@@ -2,7 +2,7 @@
 GIAI ĐOẠN 3 - predictor.py
 Hàm dự đoán NHIỆT ĐỘ ngày mai (T+1) cho dashboard Streamlit.
 
-Đọc 3 artifact của Giai đoạn 2 từ models/ và kho dữ liệu archive/weather.parquet:
+Đọc 3 artifact của Giai đoạn 2 từ models/ và kho dữ liệu weather.parquet (tải từ Kaggle):
   - lstm_weather_model_temp.pt   (checkpoint + metadata, lưu TÊN FILE tương đối)
   - scaler_temp.pkl              (MinMaxScaler đã fit)
   - feature_cols_temp.pkl        (danh sách 27 cột đặc trưng)
@@ -18,12 +18,21 @@ import pandas as pd
 import joblib
 import torch
 import torch.nn as nn
+import kagglehub
 
 # ---- Đường dẫn TƯƠNG ĐỐI (di động giữa các máy) ----
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
-DATA_PATH = os.path.join(BASE_DIR, "archive", "weather.parquet")
 CKPT_PATH = os.path.join(MODELS_DIR, "lstm_weather_model_temp.pt")
+
+# ---- Dữ liệu lịch sử lấy trực tiếp từ Kaggle (kagglehub tự cache, không lưu trong repo) ----
+KAGGLE_DATASET = "nguyentranggggg/vietnam-meteorological-weather-data-2020-2026"
+
+
+def get_data_path():
+    """Tải (lần đầu) / lấy từ cache dataset Kaggle, trả về đường dẫn thư mục weather.parquet."""
+    root = kagglehub.dataset_download(KAGGLE_DATASET)
+    return os.path.join(root, "weather.parquet")
 
 # Phải khớp với lúc train (xem models/train_lstm_temperature.py)
 SEQUENCE_LENGTH = 30
@@ -73,8 +82,8 @@ def load_model():
 
 
 def load_history():
-    """Đọc parquet 1 lần. Tách riêng để app.py bọc @st.cache_data."""
-    df = pd.read_parquet(DATA_PATH)
+    """Đọc parquet 1 lần (tải từ Kaggle nếu chưa có cache). Tách riêng để app.py bọc @st.cache_data."""
+    df = pd.read_parquet(get_data_path())
     df['valid_time'] = pd.to_datetime(df['valid_time'])
     df['date'] = df['valid_time'].dt.date
     return df

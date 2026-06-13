@@ -5,6 +5,9 @@
 > hiện có đã được resave; (2) *dời* `dashboard_main.csv` & `storms.csv` vào `data/`.
 > Thực thi gồm: `utils/storm.py`, `utils/data_pipeline.py`, `predictor.py`, refactor `app.py`
 > (caching), cập nhật `requirements.txt`. Đã test: `python predictor.py` + chạy thử dashboard.
+>
+> **Cập nhật sau:** dữ liệu `weather.parquet` nay lấy trực tiếp từ **Kaggle** qua `kagglehub`
+> (tự cache ở `~/.cache/kagglehub`), đã **xóa thư mục `archive/`** khỏi repo.
 
 > Mục tiêu: lắp "bộ não" LSTM (4 file `_temp` từ Giai đoạn 2) vào dashboard Streamlit,
 > tổ chức lại code theo kiến trúc trong [PROJECT_WORKFLOW.md](../PROJECT_WORKFLOW.md), và
@@ -14,7 +17,8 @@
 - `lstm_weather_model_temp.pt` — checkpoint + metadata (input_size, hidden_size, …).
 - `scaler_temp.pkl` — `MinMaxScaler` đã fit cho 26 cột số.
 - `feature_cols_temp.pkl` — danh sách 27 cột đặc trưng (có `season`).
-- `archive/weather.parquet` — kho dữ liệu lịch sử để lấy 30 ngày gần nhất.
+- Dữ liệu lịch sử `weather.parquet` — lấy trực tiếp từ Kaggle qua `kagglehub` (tự cache,
+  không lưu trong repo): `nguyentranggggg/vietnam-meteorological-weather-data-2020-2026`.
 - (`training_results_temp.png` — chỉ để hiển thị/minh họa, không dùng khi suy luận.)
 
 **Hợp đồng mô hình** (phải khớp tuyệt đối — nhắc lại từ CLAUDE.md §4.2):
@@ -74,8 +78,8 @@ analyze_and_predict_weather_data/
 │   ├── storm.py           # detect_storms, spatial_filter, distance_matrix, len_deg_lon, nanmean
 │   └── data_pipeline.py   # fetch_cds_data, process_and_load_data
 ├── models/                # 4 file _temp (đã có)
-├── data/                  # (tùy chọn) dời dashboard_main.csv, storms.csv vào đây
-└── archive/weather.parquet
+└── data/                  # dashboard_main.csv, storms.csv (đã dời vào đây)
+# Dữ liệu LSTM (weather.parquet) KHÔNG nằm trong repo — tải từ Kaggle qua kagglehub
 ```
 
 ### 3.1.1. Tạo `utils/storm.py`
@@ -113,11 +117,14 @@ Logic lấy từ `predict_tomorrow` mẫu trong
 (a) **dùng đường dẫn tương đối**, (b) **tách phần load model/dữ liệu để cache** (Bước 3.3),
 (c) trả thêm metadata hữu ích cho UI (ngày dự đoán, nhiệt độ hôm nay).
 
+> **Code chuẩn nằm trong [../predictor.py](../predictor.py)** — đoạn dưới chỉ minh họa. Dữ liệu
+> lịch sử lấy từ Kaggle bằng `kagglehub` (tự cache), KHÔNG đọc từ `archive/` nữa.
+
 ```python
 # predictor.py
 """
 GIAI ĐOẠN 3 - Hàm dự đoán cho Streamlit.
-Đọc 4 file _temp từ models/ và archive/weather.parquet để dự đoán nhiệt độ ngày mai.
+Đọc 3 file _temp từ models/ và weather.parquet (tải từ Kaggle) để dự đoán nhiệt độ ngày mai.
 """
 import os
 import numpy as np
@@ -125,14 +132,19 @@ import pandas as pd
 import joblib
 import torch
 import torch.nn as nn
+import kagglehub
 
 # ---- Đường dẫn TƯƠNG ĐỐI (di động giữa các máy) ----
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
-DATA_PATH  = os.path.join(BASE_DIR, "archive", "weather.parquet")
 CKPT_PATH  = os.path.join(MODELS_DIR, "lstm_weather_model_temp.pt")
-SCALER_PATH       = os.path.join(MODELS_DIR, "scaler_temp.pkl")
-FEATURE_COLS_PATH = os.path.join(MODELS_DIR, "feature_cols_temp.pkl")
+
+# ---- Dữ liệu lịch sử lấy từ Kaggle (kagglehub tự cache) ----
+KAGGLE_DATASET = "nguyentranggggg/vietnam-meteorological-weather-data-2020-2026"
+
+def get_data_path():
+    root = kagglehub.dataset_download(KAGGLE_DATASET)
+    return os.path.join(root, "weather.parquet")
 
 # Phải khớp với lúc train (xem train_lstm_temperature.py)
 SEQUENCE_LENGTH = 30
@@ -170,14 +182,17 @@ def load_model():
                       ckpt['output_size'], ckpt['dropout']).to(device)
     model.load_state_dict(ckpt['model_state_dict'])
     model.eval()
-    scaler = joblib.load(SCALER_PATH)            # bỏ qua path tuyệt đối trong ckpt
-    feat_cols = joblib.load(FEATURE_COLS_PATH)
+    # Resolve tên file theo MODELS_DIR; fallback cho checkpoint cũ (lưu *_path tuyệt đối)
+    scaler_name = ckpt.get('scaler_name') or os.path.basename(ckpt['scaler_path'])
+    feat_name = ckpt.get('feature_cols_name') or os.path.basename(ckpt['feature_cols_path'])
+    scaler = joblib.load(os.path.join(MODELS_DIR, scaler_name))
+    feat_cols = joblib.load(os.path.join(MODELS_DIR, feat_name))
     return model, scaler, feat_cols, device
 
 
 def load_history():
-    """Đọc parquet 1 lần. Tách riêng để Bước 3.3 bọc @st.cache_data."""
-    df = pd.read_parquet(DATA_PATH)
+    """Đọc parquet 1 lần (tải từ Kaggle nếu chưa cache). Tách riêng để Bước 3.3 bọc @st.cache_data."""
+    df = pd.read_parquet(get_data_path())
     df['valid_time'] = pd.to_datetime(df['valid_time'])
     df['date'] = df['valid_time'].dt.date
     return df

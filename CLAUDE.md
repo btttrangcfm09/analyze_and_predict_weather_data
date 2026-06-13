@@ -40,9 +40,7 @@ analyze_and_predict_weather_data/
 │   ├── crawl_rain.py         #   - cào lượng mưa
 │   ├── weather_data.csv      #   - dữ liệu thô (đã cào)
 │   └── rain_data.csv
-├── archive/
-│   └── weather.parquet/      # Kho dữ liệu Parquet, partition theo year=2020..2026
-│                             #   -> ĐẦU VÀO của mô hình LSTM (Giai đoạn 2 & 3)
+│                             # (KHÔNG còn thư mục archive/ — dữ liệu LSTM lấy từ Kaggle)
 ├── models/                   # Giai đoạn 2: AI/ML
 │   ├── train_lstm_temperature.py   # Script train LSTM dự đoán NHIỆT ĐỘ (bản mới nhất)
 │   ├── lstm_weather_model_temp.pt  # Checkpoint model + metadata (lưu TÊN FILE tương đối)
@@ -73,7 +71,7 @@ pip install -r requirements.txt
 # Chạy dashboard (cổng tùy ý)
 streamlit run app.py --server.port 8505
 
-# Train lại mô hình LSTM nhiệt độ (đọc archive/weather.parquet, ghi models/*_temp.*)
+# Train lại mô hình LSTM nhiệt độ (tự tải dữ liệu từ Kaggle, ghi models/*_temp.*)
 python models/train_lstm_temperature.py
 ```
 
@@ -92,8 +90,10 @@ python predictor.py
 ### 4.1. Luồng dữ liệu
 ```
 Copernicus CDS API
-   └─(crawl)→ ETL/code/*.csv  ─(xử lý/đổi tên cột)→ dashboard_main.csv   (cho dashboard)
-                                                  └→ archive/weather.parquet (cho LSTM)
+   └─(crawl)→ ETL/code/*.csv  ─(xử lý/đổi tên cột)→ data/dashboard_main.csv  (cho dashboard)
+
+Kaggle dataset (weather.parquet, partition year=/month=)  ──(kagglehub, tự cache)→  LSTM
+   nguyentranggggg/vietnam-meteorological-weather-data-2020-2026
 ```
 
 `dashboard_main.csv` và `weather.parquet` dùng **chung tên cột đã chuẩn hóa**
@@ -134,7 +134,8 @@ Tóm tắt từ [PROJECT_WORKFLOW.md](PROJECT_WORKFLOW.md). Trạng thái hiện
 ### Giai đoạn 1 — Kỹ sư dữ liệu *(phần lớn đã xong)*
 1. Cào dữ liệu lịch sử 5 năm bằng `crawl_weather.py` / `crawl_rain.py` (đổi `start/end_date`).
 2. Làm sạch bằng pandas (interpolation / mean imputation).
-3. Lưu dạng **Parquet** → đã có `archive/weather.parquet` (partition theo năm 2020–2026).
+3. Lưu dạng **Parquet** → đã đẩy lên Kaggle (`weather.parquet`, partition `year=/month=`,
+   2020–2026); code dùng `kagglehub` tải/cache, không lưu trong repo.
 4. (Tùy chọn) Tự động hóa cào hằng ngày bằng Task Scheduler/Cron.
 
 ### Giai đoạn 2 — Kỹ sư AI/ML *(đã xong, ra 4 file `_temp`)*
@@ -175,6 +176,6 @@ Tóm tắt từ [PROJECT_WORKFLOW.md](PROJECT_WORKFLOW.md). Trạng thái hiện
 
 ## 7. Trạng thái Git
 - Nhánh chính: `main`.
-- File `_temp.*` trong `models/` và `archive/`, `PROJECT_WORKFLOW.md` hiện chưa commit.
+- File `_temp.*` trong `models/`, `PROJECT_WORKFLOW.md` hiện chưa commit.
 - File dữ liệu lớn (`*.csv`, `*.parquet`, `*.grib`) không nên đẩy lên Git — cân nhắc thêm
   vào `.gitignore` trước khi commit.
