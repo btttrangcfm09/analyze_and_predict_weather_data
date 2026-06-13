@@ -6,3 +6,9 @@ streamlit
 xarray
 cfgrib
 cdsapi
+# Giai đoạn 2 & 3 - AI/ML
+torch
+scikit-learn
+joblib
+pyarrow
+matplotlib

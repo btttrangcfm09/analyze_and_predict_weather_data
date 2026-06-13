@@ -1,1 +1,10 @@
 rock-data-436815-e2-9cae001145c0.json
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# File tạm khi crawl dữ liệu
+crawl_weather_temp/
