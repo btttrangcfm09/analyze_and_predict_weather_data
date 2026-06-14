@@ -5,6 +5,6 @@ node_modules/
 __pycache__/
 *.pyc
 venv/
-
+data/
 # File tạm khi crawl dữ liệu
 crawl_weather_temp/

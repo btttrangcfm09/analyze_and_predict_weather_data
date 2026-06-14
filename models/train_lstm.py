@@ -31,9 +31,14 @@ warnings.filterwarnings('ignore')
 # ============================================================
 # CẤU HÌNH
 # ============================================================
-DATA_PATH = r"C:\Users\Admin\.cache\kagglehub\datasets\nguyentranggggg\vietnam-meteorological-weather-data-2020-2026\versions\1\weather.parquet"
 OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(OUTPUT_DIR)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Dữ liệu lịch sử lấy trực tiếp từ Kaggle (kagglehub tự cache, không lưu trong repo)
+import kagglehub
+KAGGLE_DATASET = "nguyentranggggg/vietnam-meteorological-weather-data-2020-2026"
+DATA_PATH = os.path.join(kagglehub.dataset_download(KAGGLE_DATASET), "weather.parquet")
 
 SEQUENCE_LENGTH = 30
 BATCH_SIZE = 64
@@ -41,7 +46,7 @@ EPOCHS = 50
 LEARNING_RATE = 0.001
 HIDDEN_SIZE = 128
 NUM_LAYERS = 2
-DROPOUT = 0.2
+DROPOUT = 0.1
 TRAIN_RATIO = 0.8
 
 FEATURE_COLS_RAW = [
@@ -49,7 +54,7 @@ FEATURE_COLS_RAW = [
     'relative_humidity', 'mean_sea_level_pressure', 'surface_pressure',
     'total_cloud_cover', 'apparent_temperature', 'air_density',
 ]
-TARGET_COLS = ['temperature_celsius', 'total_precipitation']
+TARGET_COLS = ['temperature_celsius']
 
 # ============================================================
 # BƯỚC 2.1 - FEATURE ENGINEERING
@@ -73,6 +78,10 @@ def load_and_preprocess_data():
             lambda x: x.interpolate(method='linear').bfill().ffill()
         )
     print(f"  Missing con lai: {df[FEATURE_COLS_RAW].isnull().sum().sum()}")
+
+    print("\n[2.5/4] Log transform luong mua (giam nhieu)...")
+    # Biến đổi logarit để trị các đỉnh mưa đột biến (spikes)
+    df['total_precipitation'] = np.log1p(df['total_precipitation'])
 
     print("\n[3/4] Tao dac trung thoi gian...")
     df['day_of_week'] = df['valid_time'].dt.dayofweek
@@ -130,8 +139,8 @@ def scale_data(daily):
     scaler = MinMaxScaler()
     daily[numeric_feats] = scaler.fit_transform(daily[numeric_feats])
 
-    joblib.dump(scaler, os.path.join(OUTPUT_DIR,'scaler.pkl'))
-    joblib.dump(all_feats, os.path.join(OUTPUT_DIR,'feature_cols.pkl'))
+    joblib.dump(scaler, os.path.join(OUTPUT_DIR,'scaler_temp.pkl'))
+    joblib.dump(all_feats, os.path.join(OUTPUT_DIR,'feature_cols_temp.pkl'))
     print(f"  So dac trung: {len(all_feats)}")
     print(f"  Da luu scaler.pkl va feature_cols.pkl")
     return daily, all_feats, scaler
@@ -273,35 +282,31 @@ def train_and_evaluate(daily, feat_cols, scaler):
         d[:,idx] = p; po = scaler.inverse_transform(d)[:,idx]
         d2 = np.zeros((len(t), len(numeric_feats)))
         d2[:,idx] = t; to = scaler.inverse_transform(d2)[:,idx]
+        
+        if name == 'total_precipitation':
+            po = np.expm1(po)
+            to = np.expm1(to)
+            
         rmse = np.sqrt(mean_squared_error(to, po))
         mae = mean_absolute_error(to, po)
         print(f"  |  {name}")
         print(f"  |    RMSE: {rmse:.4f}  |  MAE: {mae:.4f}")
     print("  +-----------------------------------------------------+")
 
-    # Ve bieu do
-    fig, axes = plt.subplots(2,2, figsize=(16,12))
-    fig.suptitle('Ket qua LSTM - Du doan thoi tiet Viet Nam', fontsize=14, fontweight='bold')
+    # Ve bieu do (Chi 1 dong 2 cot cho Nhiet do)
+    fig, axes = plt.subplots(1, 2, figsize=(16,6))
+    fig.suptitle('Ket qua LSTM - Du doan Nhiet do Viet Nam', fontsize=14, fontweight='bold')
 
-    axes[0,0].plot(train_losses, label='Train', color='blue', alpha=0.7)
-    axes[0,0].plot(test_losses, label='Test', color='red', alpha=0.7)
-    axes[0,0].set_title('Training & Test Loss'); axes[0,0].legend(); axes[0,0].grid(True, alpha=0.3)
+    axes[0].plot(train_losses, label='Train', color='blue', alpha=0.7)
+    axes[0].plot(test_losses, label='Test', color='red', alpha=0.7)
+    axes[0].set_title('Training & Test Loss'); axes[0].legend(); axes[0].grid(True, alpha=0.3)
 
-    axes[0,1].plot(tgts[:200,0], label='Thuc te', color='blue', alpha=0.7)
-    axes[0,1].plot(preds[:200,0], label='Du doan', color='red', alpha=0.7, ls='--')
-    axes[0,1].set_title('Nhiet do: Thuc te vs Du doan'); axes[0,1].legend(); axes[0,1].grid(True, alpha=0.3)
-
-    axes[1,0].plot(tgts[:200,1], label='Thuc te', color='blue', alpha=0.7)
-    axes[1,0].plot(preds[:200,1], label='Du doan', color='red', alpha=0.7, ls='--')
-    axes[1,0].set_title('Luong mua: Thuc te vs Du doan'); axes[1,0].legend(); axes[1,0].grid(True, alpha=0.3)
-
-    axes[1,1].scatter(tgts[:,0], preds[:,0], alpha=0.3, s=10, color='blue')
-    mn, mx = min(tgts[:,0].min(),preds[:,0].max()), max(tgts[:,0].max(),preds[:,0].max())
-    axes[1,1].plot([mn,mx],[mn,mx],'r--',lw=2,label='Hoan hao')
-    axes[1,1].set_title('Scatter: Nhiet do'); axes[1,1].legend(); axes[1,1].grid(True, alpha=0.3)
+    axes[1].plot(tgts[:200,0], label='Thuc te', color='blue', alpha=0.7)
+    axes[1].plot(preds[:200,0], label='Du doan', color='red', alpha=0.7, ls='--')
+    axes[1].set_title('Nhiet do: Thuc te vs Du doan'); axes[1].legend(); axes[1].grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(OUTPUT_DIR,'training_results.png'), dpi=150, bbox_inches='tight')
+    plt.savefig(os.path.join(OUTPUT_DIR,'training_results_temp.png'), dpi=150, bbox_inches='tight')
     plt.close()
     print(f"\n  Da luu training_results.png")
 
@@ -314,7 +319,7 @@ def export_model(model):
     print("\n" + "="*60)
     print("BƯỚC 2.5 - DONG GOI AI")
     print("="*60)
-    path = os.path.join(OUTPUT_DIR, 'lstm_weather_model.pt')
+    path = os.path.join(OUTPUT_DIR, 'lstm_weather_model_temp.pt')
     torch.save({
         'model_state_dict': model.state_dict(),
         'input_size': model.lstm.input_size,
@@ -324,12 +329,13 @@ def export_model(model):
         'dropout': DROPOUT,
         'sequence_length': SEQUENCE_LENGTH,
         'target_cols': TARGET_COLS,
-        'scaler_path': os.path.join(OUTPUT_DIR, 'scaler.pkl'),
-        'feature_cols_path': os.path.join(OUTPUT_DIR, 'feature_cols.pkl'),
+        # Chỉ lưu TÊN FILE, không lưu đường dẫn tuyệt đối -> resolve theo vị trí .pt khi load
+        'scaler_name': 'scaler_temp.pkl',
+        'feature_cols_name': 'feature_cols_temp.pkl',
     }, path)
     print(f"  Da luu model: {path}")
-    print(f"  Da luu scaler: {os.path.join(OUTPUT_DIR, 'scaler.pkl')}")
-    print(f"  Da luu feature_cols: {os.path.join(OUTPUT_DIR, 'feature_cols.pkl')}")
+    print(f"  Da luu scaler: {os.path.join(OUTPUT_DIR, 'scaler_temp.pkl')}")
+    print(f"  Da luu feature_cols: {os.path.join(OUTPUT_DIR, 'feature_cols_temp.pkl')}")
 
 # ============================================================
 # HAM DU DOAN CHO STREAMLIT (BƯỚC 3)
@@ -342,9 +348,12 @@ def predict_tomorrow(lat, lon):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Load checkpoint
-    ckpt = torch.load(os.path.join(OUTPUT_DIR,'lstm_weather_model.pt'), map_location=device, weights_only=False)
-    feat_cols = joblib.load(ckpt['feature_cols_path'])
-    scaler = joblib.load(ckpt['scaler_path'])
+    ckpt = torch.load(os.path.join(OUTPUT_DIR,'lstm_weather_model_temp.pt'), map_location=device, weights_only=False)
+    # Resolve theo OUTPUT_DIR; fallback cho checkpoint cũ (lưu *_path tuyệt đối)
+    feat_name = ckpt.get('feature_cols_name') or os.path.basename(ckpt['feature_cols_path'])
+    scaler_name = ckpt.get('scaler_name') or os.path.basename(ckpt['scaler_path'])
+    feat_cols = joblib.load(os.path.join(OUTPUT_DIR, feat_name))
+    scaler = joblib.load(os.path.join(OUTPUT_DIR, scaler_name))
 
     # Rebuild model
     model = LSTMModel(ckpt['input_size'], ckpt['hidden_size'], ckpt['num_layers'],
@@ -366,6 +375,7 @@ def predict_tomorrow(lat, lon):
     # Feature engineering (same as training)
     for col in FEATURE_COLS_RAW:
         loc[col] = loc[col].interpolate('linear').bfill().ffill()
+    loc['total_precipitation'] = np.log1p(loc['total_precipitation'])
     loc['day_of_week'] = loc['valid_time'].dt.dayofweek
     loc['day_of_year'] = loc['valid_time'].dt.dayofyear
     loc['month_num'] = loc['valid_time'].dt.month
@@ -406,7 +416,10 @@ def predict_tomorrow(lat, lon):
         d = np.zeros((1, len(numeric_feats)))
         idx = numeric_feats.index(name)
         d[0, idx] = pred[i]
-        result[name] = scaler.inverse_transform(d)[0, idx]
+        val = scaler.inverse_transform(d)[0, idx]
+        if name == 'total_precipitation':
+            val = np.expm1(val)
+        result[name] = val
 
     return result
 
@@ -426,9 +439,10 @@ if __name__ == '__main__':
     print("HOAN THANH GIAI DOAN 2!")
     print("="*60)
     print(f"Cac file da tao:")
-    for f in ['lstm_weather_model.pt', 'scaler.pkl', 'feature_cols.pkl', 'training_results.png']:
+    for f in ['lstm_weather_model_temp.pt', 'scaler_temp.pkl', 'feature_cols_temp.pkl', 'training_results_temp.png']:
         fp = os.path.join(OUTPUT_DIR, f)
         if os.path.exists(fp):
             print(f"  [OK] {f} ({os.path.getsize(fp):,} bytes)")
         else:
             print(f"  [MISSING] {f}")
+            

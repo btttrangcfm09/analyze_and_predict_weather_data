@@ -23,16 +23,40 @@ import kagglehub
 # ---- Đường dẫn TƯƠNG ĐỐI (di động giữa các máy) ----
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
-CKPT_PATH = os.path.join(MODELS_DIR, "lstm_weather_model_temp.pt")
+CKPT_PATH = os.path.join(MODELS_DIR, "lstm_weather_model.pt")
 
-# ---- Dữ liệu lịch sử lấy trực tiếp từ Kaggle (kagglehub tự cache, không lưu trong repo) ----
+# ---- Dữ liệu lịch sử Kaggle và Local ----
 KAGGLE_DATASET = "nguyentranggggg/vietnam-meteorological-weather-data-2020-2026"
-
+LOCAL_WEATHER_DIR = os.path.join(BASE_DIR, "data", "weather.parquet")
+LOCAL_STORMS_PATH = os.path.join(BASE_DIR, "data", "storms.parquet")
 
 def get_data_path():
-    """Tải (lần đầu) / lấy từ cache dataset Kaggle, trả về đường dẫn thư mục weather.parquet."""
-    root = kagglehub.dataset_download(KAGGLE_DATASET)
-    return os.path.join(root, "weather.parquet")
+    """Tải từ Kaggle (lần đầu) và copy ra thư mục local để có thể nối thêm dữ liệu mới."""
+    if not os.path.exists(LOCAL_WEATHER_DIR):
+        print("Downloading base data from Kaggle to local...", flush=True)
+        import time
+        max_retries = 3
+        root = None
+        for attempt in range(max_retries):
+            try:
+                root = kagglehub.dataset_download(KAGGLE_DATASET)
+                break
+            except Exception as e:
+                print(f"Lỗi tải Kaggle (lần {attempt+1}/{max_retries}): {e}", flush=True)
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                else:
+                    raise e
+                    
+        src_weather = os.path.join(root, "weather.parquet")
+        src_storms = os.path.join(root, "storms.parquet")
+        import shutil
+        os.makedirs(os.path.join(BASE_DIR, "data"), exist_ok=True)
+        if os.path.exists(src_weather):
+            shutil.copytree(src_weather, LOCAL_WEATHER_DIR)
+        if os.path.exists(src_storms):
+            shutil.copy2(src_storms, LOCAL_STORMS_PATH)
+    return LOCAL_WEATHER_DIR
 
 # Phải khớp với lúc train (xem models/train_lstm_temperature.py)
 SEQUENCE_LENGTH = 30
