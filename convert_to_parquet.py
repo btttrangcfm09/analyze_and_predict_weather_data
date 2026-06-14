@@ -134,46 +134,53 @@ def process_year(year: str):
         print(f"  ⚠️  Thiếu file cho năm {year} — bỏ qua")
         return
 
-    print(f"  Đang xử lý {year} theo từng phần nhỏ (Chunking) để không treo máy...", flush=True)
+    print(f"  Đang xử lý toàn bộ năm {year} (Bằng PyArrow Engine siêu tốc)...", flush=True)
 
-    chunk_size = 1_000_000
-    w_iter = pd.read_csv(w_path, chunksize=chunk_size, low_memory=False)
-    r_iter = pd.read_csv(r_path, chunksize=chunk_size, low_memory=False)
+    w_cols = ["latitude", "longitude", "time", "valid_time", "u10", "v10", "d2m", "t2m", "msl", "sst", "sp", "tcc"]
+    r_cols = ["latitude", "longitude", "time", "valid_time", "tp"]
 
-    chunk_idx = 1
-    for df_w, df_r in zip(w_iter, r_iter):
-        print(f"    -> Phần {chunk_idx}...", flush=True)
-        # Chuẩn hóa cột thời gian (xử lý lỗi trùng lặp cột 'time')
-        for df in [df_w, df_r]:
-            if "time" in df.columns and "valid_time" in df.columns:
-                df.drop(columns=["valid_time"], inplace=True)
-            elif "valid_time" in df.columns:
-                df.rename(columns={"valid_time": "time"}, inplace=True)
+    # Đọc toàn bộ file vào RAM một lần cực nhanh bằng PyArrow (< 3GB RAM tổng cộng)
+    print("    -> Đọc file weather...", flush=True)
+    df_w = pd.read_csv(w_path, usecols=lambda c: c in w_cols, engine="pyarrow", dtype_backend="pyarrow")
+    
+    print("    -> Đọc file rain...", flush=True)
+    df_r = pd.read_csv(r_path, usecols=lambda c: c in r_cols, engine="pyarrow", dtype_backend="pyarrow")
 
-        df = pd.merge(df_w, df_r[["latitude", "longitude", "time", "tp"]],
-                      on=["latitude", "longitude", "time"],
-                      how="inner")
-        df = df.drop_duplicates(subset=["latitude", "longitude", "time"])
+    # Chuẩn hóa cột thời gian: 
+    # Cột lượng mưa (tp) trong ERA5 lưu giờ khởi tạo ở cột 'time' (chỉ có 6, 18), 
+    # và giờ thực tế ở cột 'valid_time' (đủ 24 giờ). 
+    # Ta BẮT BUỘC phải lấy 'valid_time' làm chuẩn cho cả 2 file.
+    for df in [df_w, df_r]:
+        if "valid_time" in df.columns:
+            if "time" in df.columns:
+                df.drop(columns=["time"], inplace=True)
+            df.rename(columns={"valid_time": "time"}, inplace=True)
 
-        del df_w
-        del df_r
+    print("    -> Merge dữ liệu...", flush=True)
+    df = pd.merge(df_w, df_r[["latitude", "longitude", "time", "tp"]],
+                  on=["latitude", "longitude", "time"],
+                  how="inner")
+    df = df.drop_duplicates(subset=["latitude", "longitude", "time"])
 
-        # Làm sạch và tính toán
-        df = clean_df(df)
-        df = compute_derived(df)
+    # Xóa file thô khỏi RAM ngay lập tức
+    del df_w
+    del df_r
 
-        # Lưu từng tháng thành các file Parquet riêng biệt trong partition
-        for month, df_month in df.groupby("month"):
-            out_dir = os.path.join(PARQUET_DIR, f"year={year}", f"month={month:02d}")
-            os.makedirs(out_dir, exist_ok=True)
-            out_path = os.path.join(out_dir, f"data_chunk_{chunk_idx}.parquet")
-            df_month.drop(columns=["year", "month"]).to_parquet(
-                out_path, index=False, compression="snappy"
-            )
+    # Làm sạch và tính toán
+    df = clean_df(df)
+    df = compute_derived(df)
 
-        chunk_idx += 1
+    print("    -> Lưu ra Parquet từng tháng...", flush=True)
+    # Lưu từng tháng thành các file Parquet riêng biệt trong partition
+    for month, df_month in df.groupby("month"):
+        out_dir = os.path.join(PARQUET_DIR, f"year={year}", f"month={month:02d}")
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, "data.parquet")
+        df_month.drop(columns=["year", "month"]).to_parquet(
+            out_path, index=False, compression="snappy"
+        )
 
-    print(f"  ✅ Đã xử lý xong năm {year} ({chunk_idx - 1} phần)")
+    print(f"  ✅ Đã xử lý xong trọn vẹn năm {year}")
 
 
 def main():
