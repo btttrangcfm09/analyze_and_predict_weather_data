@@ -109,10 +109,17 @@ def fetch_cds_data(start_date, end_date):
 # ==============================================================
 @st.cache_data(show_spinner="Đang xử lý dữ liệu bão...")
 def process_and_load_data(force_reprocess=False):
-    from predictor import LOCAL_STORMS_PATH
+    from predictor import LOCAL_STORMS_PATH, get_data_path
+    try:
+        # Đảm bảo dữ liệu nền tảng đã được tải về từ Kaggle
+        get_data_path()
+    except Exception as e:
+        st.warning(f"Không thể tải dữ liệu tự động từ Kaggle: {e}")
+
     if os.path.exists(LOCAL_STORMS_PATH):
         df_storms = pd.read_parquet(LOCAL_STORMS_PATH)
         return None, df_storms
     else:
         empty_storms = pd.DataFrame(columns=['time', 'lon_storm', 'lat_storm', 'amp_storm', 'max_wind_speed', 'year', 'month', 'day', 'time_dt'])
+        return None, empty_storms
 

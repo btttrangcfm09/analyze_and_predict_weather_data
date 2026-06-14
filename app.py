@@ -220,13 +220,13 @@ try:
             df_day['Plot Value'] = df_day[attr_col]
             color_scale = "Viridis"
 
-        fig_map = px.density_mapbox(
+        fig_map = px.density_map(
             df_day,
             lat='latitude', lon='longitude', z='Plot Value',
             animation_frame='hour',
             radius=20,
             center=dict(lat=16, lon=106), zoom=4,
-            mapbox_style="carto-positron",
+            map_style="carto-positron",
             color_continuous_scale=color_scale,
             title=f"Animated {selected_attr_name} over Vietnam"
         )
