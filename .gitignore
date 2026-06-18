@@ -5,6 +5,7 @@ node_modules/
 __pycache__/
 *.pyc
 venv/
-/data/
+/data/archive.zip
+/data/weather_34prov.parquet
 # File tạm khi crawl dữ liệu
 crawl_weather_temp/

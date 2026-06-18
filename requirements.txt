@@ -11,5 +11,8 @@ torch
 scikit-learn
 joblib
 pyarrow
+geopandas
+shapely
+pyogrio
 matplotlib
 kagglehub
