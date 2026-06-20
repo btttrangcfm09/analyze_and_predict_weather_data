@@ -16,3 +16,4 @@ shapely
 pyogrio
 matplotlib
 kagglehub
+kaggle

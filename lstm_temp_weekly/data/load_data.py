@@ -1,14 +1,15 @@
 """
-Nap du lieu thoi tiet va loc TRON VEN cac diem luoi nam tren lanh tho
-dat lien Viet Nam bang GeoPackage GADM level-0.
+Nap du lieu thoi tiet cho cac diem luoi nam trong lanh tho Viet Nam.
 
-Y tuong hieu nang:
-  1. Doc Parquet mot lan voi dung cac cot can cho mo hinh.
-  2. Rut gon DataFrame lon thanh danh sach toa do duy nhat.
-  3. Chi chay phep toan hinh hoc Shapely tren danh sach toa do duy nhat.
-  4. Dung MultiIndex.isin() de lay lai toan bo chuoi thoi gian tu DataFrame goc.
+Luon loc toa do truoc khi doc day du du lieu:
+  1. Chi doc hai cot latitude/longitude de lay danh sach toa do duy nhat.
+  2. Dung GeoPackage GADM level-0 de giu cac toa do nam trong polygon Viet Nam
+     da buffer 0.05 do.
+  3. Moi doc day du _COLS tu Parquet voi filters theo cac toa do hop le.
+  4. Sap xep chuoi thoi gian va ep float64 -> float32.
 """
 from pathlib import Path
+from typing import Any, cast
 
 import geopandas as gpd
 import pandas as pd
@@ -34,9 +35,7 @@ _COLS = [
 
 
 def _resolve_gpkg_path(gpkg_path: str) -> str:
-    """
-    Uu tien duong dan Kaggle. Khi test local, tu dong fallback ve ./data.
-    """
+    """Uu tien duong dan Kaggle, fallback ve ./data khi test local."""
     if Path(gpkg_path).exists():
         return gpkg_path
     if Path(LOCAL_GPKG_PATH).exists():
@@ -45,20 +44,12 @@ def _resolve_gpkg_path(gpkg_path: str) -> str:
 
 
 def _union_geometries(geometry):
-    """
-    Gop tat ca polygon Viet Nam thanh mot hinh hoc duy nhat.
-    """
+    """Gop tat ca polygon Viet Nam thanh mot hinh hoc duy nhat."""
     return geometry.union_all()
 
 
 def _load_vietnam_land_geometry(gpkg_path: str = GPKG_PATH):
-    """
-    Doc polygon quoc gia Viet Nam tu GADM level-0.
-
-    Khac voi bai toan "sat bien", lan nay ta giu polygon dat lien day du, sau
-    do buffer nhe polygon de khong mat cac diem luoi nam ngay sat bien gioi
-    hoac sat duong bo bien.
-    """
+    """Doc polygon quoc gia Viet Nam tu GeoPackage GADM level-0."""
     gpkg_path = _resolve_gpkg_path(gpkg_path)
     print(f"Dang doc ranh gioi Viet Nam tu GeoPackage: {gpkg_path}")
     vietnam_level0 = gpd.read_file(gpkg_path, layer=0)
@@ -78,21 +69,31 @@ def _load_vietnam_land_geometry(gpkg_path: str = GPKG_PATH):
     return vietnam_geom
 
 
+def _read_unique_coordinates(data_path: str) -> pd.DataFrame:
+    """
+    Chi doc hai cot toa do tu Parquet.
+
+    Buoc nay khong doc cac cot khi tuong lon nhu nhiet do/mua/ap suat, nen RAM
+    nhe hon rat nhieu so voi doc full _COLS truoc roi moi loc.
+    """
+    print("Dang doc nhe 2 cot latitude/longitude de lay toa do duy nhat ...")
+    coords = pd.read_parquet(data_path, columns=_COORD_COLS, engine='auto')
+    unique_coords = coords.drop_duplicates().reset_index(drop=True)
+    print(f"So diem toa do duy nhat truoc khi loc: {len(unique_coords):,}")
+    return unique_coords
+
+
 def _find_vietnam_land_coordinates(
-    df: pd.DataFrame,
+    unique_coords: pd.DataFrame,
     vietnam_geom,
     buffer_degrees: float = LAND_BUFFER_DEGREES,
 ) -> pd.DataFrame:
     """
     Loc toa do nam trong polygon Viet Nam da buffer.
 
-    Luu y quan trong ve RAM: chi tao Point va contains() cho cac cap toa do
-    duy nhat, khong tinh hinh hoc tren tung dong thoi gian cua DataFrame lon.
+    Chi tao Point va contains() cho danh sach toa do duy nhat, tuyet doi khong
+    chay phep toan hinh hoc tren hang trieu dong du lieu thoi gian.
     """
-    unique_coords = df[_COORD_COLS].drop_duplicates().reset_index(drop=True)
-    print(f"So diem toa do duy nhat truoc khi loc: {len(unique_coords):,}")
-
-    # Buffer polygon Viet Nam them 0.05 do (~5 km) de giu diem sat bien/bo bien.
     vietnam_area = vietnam_geom.buffer(buffer_degrees)
 
     # Shapely Point dung thu tu (x, y) = (longitude, latitude).
@@ -117,19 +118,41 @@ def _find_vietnam_land_coordinates(
     return land_coords
 
 
-def _filter_rows_by_coordinates(df: pd.DataFrame, keep_coords: pd.DataFrame) -> pd.DataFrame:
+def _build_coordinate_filters(keep_coords: pd.DataFrame) -> list:
     """
-    Dung MultiIndex.isin() de so khop dung cap (latitude, longitude).
+    Tao Parquet filters theo cap toa do hop le.
 
-    Cach nay chi tao mask theo toa do, khong tao Point cho hang trieu dong du
-    lieu goc, nen tiet kiem RAM hon rat nhieu so voi loc hinh hoc truc tiep.
+    Dung OR theo tung latitude, trong moi latitude dung longitude in [...]
+    de filter dung cap (latitude, longitude) nhung ngan gon hon hang nghin
+    dieu kien OR rieng le.
     """
-    keep_index = pd.MultiIndex.from_frame(keep_coords[_COORD_COLS])
-    df_index = pd.MultiIndex.from_arrays(
-        [df['latitude'], df['longitude']],
-        names=_COORD_COLS,
+    coords = keep_coords[_COORD_COLS].astype('float64')
+    lon_by_lat: dict[float, list[float]] = {}
+
+    for lat_value, lon_value in coords.itertuples(index=False, name=None):
+        lat = float(cast(Any, lat_value))
+        lon = float(cast(Any, lon_value))
+        lon_by_lat.setdefault(lat, []).append(lon)
+
+    return [
+        [
+            ('latitude', '==', lat),
+            ('longitude', 'in', lons),
+        ]
+        for lat, lons in lon_by_lat.items()
+    ]
+
+
+def _read_filtered_weather_data(data_path: str, keep_coords: pd.DataFrame) -> pd.DataFrame:
+    """Doc day du _COLS chi cho cac toa do dat lien da duoc loc truoc."""
+    filters = _build_coordinate_filters(keep_coords)
+    print(f"Dang doc Parquet voi filters cho {len(keep_coords):,} diem toa do hop le ...")
+    return pd.read_parquet(
+        data_path,
+        columns=_COLS,
+        engine='auto',
+        filters=filters,
     )
-    return df.loc[df_index.isin(keep_index)].copy()
 
 
 def load_data(
@@ -137,12 +160,10 @@ def load_data(
     gpkg_path: str = GPKG_PATH,
     buffer_degrees: float = LAND_BUFFER_DEGREES,
 ) -> pd.DataFrame:
-    print(f"Dang doc du lieu thoi tiet tu: {data_path}")
-    df = pd.read_parquet(data_path, columns=_COLS, engine='auto')
-
     vietnam_geom = _load_vietnam_land_geometry(gpkg_path)
-    land_coords = _find_vietnam_land_coordinates(df, vietnam_geom, buffer_degrees)
-    df = _filter_rows_by_coordinates(df, land_coords)
+    unique_coords = _read_unique_coordinates(data_path)
+    land_coords = _find_vietnam_land_coordinates(unique_coords, vietnam_geom, buffer_degrees)
+    df = _read_filtered_weather_data(data_path, land_coords)
 
     # valid_time phai la datetime de tao feature thoi gian dung ve sau.
     df['valid_time'] = pd.to_datetime(df['valid_time'])
