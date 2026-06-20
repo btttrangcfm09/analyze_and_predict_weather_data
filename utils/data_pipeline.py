@@ -1,5 +1,5 @@
 """
-GIAI ĐOẠN 3 - utils/data_pipeline.py
+utils/data_pipeline.py
 Tải dữ liệu từ Copernicus CDS API (PHẦN 1) và xử lý + phát hiện bão (PHẦN 3).
 Tách ra từ app.py. File dữ liệu kết quả nằm trong thư mục data/.
 """
@@ -22,10 +22,11 @@ DATA_DIR = os.path.join(REPO_ROOT, "data")
 ETL_DIR = os.path.join(REPO_ROOT, "ETL", "code")
 TMP_DIR = os.path.join(REPO_ROOT, "crawl_weather_temp")
 
-DASHBOARD_CSV = os.path.join(DATA_DIR, "dashboard_main.csv")
-STORMS_CSV = os.path.join(DATA_DIR, "storms.csv")
-WEATHER_CSV = os.path.join(ETL_DIR, "weather_data.csv")
-RAIN_CSV = os.path.join(ETL_DIR, "rain_data.csv")
+DASHBOARD_CSV    = os.path.join(DATA_DIR, "dashboard_main.csv")
+STORMS_CSV       = os.path.join(DATA_DIR, "storms.csv")
+WEATHER_CSV      = os.path.join(ETL_DIR, "weather_data.csv")
+RAIN_CSV         = os.path.join(ETL_DIR, "rain_data.csv")
+LOCAL_STORMS_PATH = os.path.join(DATA_DIR, "storms.parquet")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -109,13 +110,6 @@ def fetch_cds_data(start_date, end_date):
 # ==============================================================
 @st.cache_data(show_spinner="Đang xử lý dữ liệu bão...")
 def process_and_load_data(force_reprocess=False):
-    from predictor import LOCAL_STORMS_PATH, get_data_path
-    try:
-        # Đảm bảo dữ liệu nền tảng đã được tải về từ Kaggle
-        get_data_path()
-    except Exception as e:
-        st.warning(f"Không thể tải dữ liệu tự động từ Kaggle: {e}")
-
     if os.path.exists(LOCAL_STORMS_PATH):
         df_storms = pd.read_parquet(LOCAL_STORMS_PATH)
         return None, df_storms
