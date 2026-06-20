@@ -1,11 +1,12 @@
 """pages/daily.py — Tab phân tích theo ngày, theo giờ cho 34 tỉnh thành."""
 
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 from components.styles import province_selector
-from core.features     import VIETNAM_PROVINCES
+from core.provinces    import province_points
 
 
 def render_daily_page(df_main):
@@ -16,7 +17,10 @@ def render_daily_page(df_main):
         st.warning("Không có dữ liệu!")
         st.stop()
 
-    selected_date = st.selectbox("Chọn Ngày", dates, index=len(dates) - 1)
+    selected_date = st.selectbox(
+        "Chọn Ngày", dates, index=len(dates) - 1,
+        format_func=lambda d: pd.Timestamp(d).strftime("%Y-%m-%d"),
+    )
     df_day = df_main[df_main["date"] == selected_date].copy()
 
     attr_mapping = {
@@ -60,7 +64,7 @@ def render_daily_page(df_main):
         title=f"{selected_attr_name} theo giờ — {selected_date}",
     )
     fig_map.update_layout(margin={"r": 0, "t": 40, "l": 0, "b": 0})
-    st.plotly_chart(fig_map, use_container_width=True)
+    st.plotly_chart(fig_map, width="stretch")
 
     # ── Biểu đồ từng giờ theo tỉnh thành ─────────────────────────────────────
     st.markdown("---")
@@ -68,7 +72,7 @@ def render_daily_page(df_main):
     col1, col2 = st.columns([1, 2])
 
     with col1:
-        _, lat_sel, lon_sel = province_selector(VIETNAM_PROVINCES, key="daily_prov")
+        _, lat_sel, lon_sel = province_selector(province_points(), key="daily_prov")
 
     with col2:
         df_point = df_day_sorted[
@@ -103,6 +107,6 @@ def render_daily_page(df_main):
                 legend=dict(x=0.05, y=1.2, orientation="h"),
                 template="plotly_white", barmode="relative",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.warning("Không có dữ liệu cho tỉnh/tọa độ này trong ngày đã chọn.")

@@ -6,7 +6,8 @@ __pycache__/
 *.pyc
 venv/
 /data/archive.zip
-/data/weather_34prov.parquet
+/data/*.parquet
+
 # File tạm khi crawl dữ liệu
 crawl_weather_temp/
 

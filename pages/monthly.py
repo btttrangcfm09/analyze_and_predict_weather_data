@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.styles import province_selector
-from core.features     import VIETNAM_PROVINCES
+from core.provinces    import province_points
 
 
 def render_monthly_page(df_main):
@@ -15,7 +15,7 @@ def render_monthly_page(df_main):
     selected_month = st.selectbox(
         "Chọn Tháng", range(1, 13), format_func=lambda x: str(x).zfill(2)
     )
-    _, lat_sel, lon_sel = province_selector(VIETNAM_PROVINCES, key="monthly_prov")
+    _, lat_sel, lon_sel = province_selector(province_points(), key="monthly_prov")
 
     month_str = f"{selected_year}-{selected_month:02d}"
     df_month  = df_main[
@@ -45,7 +45,7 @@ def render_monthly_page(df_main):
     m2.metric("Tổng lượng mưa",                 f"{total_rain:.1f} mm")
     m3.metric("Chênh lệch nhiệt độ lớn nhất",   f"{max_diff:.1f} °C")
 
-    days = df_daily["date"].astype(str).tolist()
+    days = df_daily["date"].dt.strftime("%Y-%m-%d").tolist()
     fig  = go.Figure()
     fig.add_trace(go.Bar(
         x=days, y=(df_daily["total_precipitation"] * 1000).tolist(),
@@ -74,5 +74,5 @@ def render_monthly_page(df_main):
     ))
     pie.update_layout(title="Phân Bố Lượng Mưa Theo Ngày")
 
-    st.plotly_chart(fig, use_container_width=True)
-    st.plotly_chart(pie, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(pie, width="stretch")

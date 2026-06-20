@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.styles import province_selector
-from core.features     import VIETNAM_PROVINCES
+from core.provinces    import province_points
 
 
 def render_yearly_page(df_main):
@@ -12,7 +12,7 @@ def render_yearly_page(df_main):
 
     years         = list(range(2020, 2027))
     selected_year = st.selectbox("Chọn Năm", years, index=years.index(2024))
-    _, lat_sel, lon_sel = province_selector(VIETNAM_PROVINCES, key="yearly_prov")
+    _, lat_sel, lon_sel = province_selector(province_points(), key="yearly_prov")
 
     df_year = df_main[
         (df_main["year"]      == str(selected_year)) &
@@ -30,7 +30,7 @@ def render_yearly_page(df_main):
     })
     df_daily.columns       = ["max_temperature", "min_temperature", "total_rain"]
     df_daily["daily_diff"] = df_daily["max_temperature"] - df_daily["min_temperature"]
-    df_daily["month"]      = df_daily.index.astype(str).str[:7]
+    df_daily["month"]      = df_daily.index.strftime("%Y-%m")
 
     df_monthly = df_daily.groupby("month").agg({
         "max_temperature": "max",
@@ -86,5 +86,5 @@ def render_yearly_page(df_main):
     ))
     pie.update_layout(title="Phân Bố Lượng Mưa Theo Tháng")
 
-    st.plotly_chart(fig, use_container_width=True)
-    st.plotly_chart(pie, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(pie, width="stretch")
